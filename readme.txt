@@ -1,0 +1,1 @@
+wszystko od nowa
