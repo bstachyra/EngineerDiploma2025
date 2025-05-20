@@ -74,14 +74,18 @@ hands = mp_hands.Hands(
     min_detection_confidence=0.7, min_tracking_confidence=0.5, model_complexity=1
 )
 
-# --- Helper Functions --- (No changes needed)
+# --- Helper Functions ---
+
 def process_static_landmarks(hand_landmarks):
+    """Processes landmarks for static gestures."""
     if not hand_landmarks: return None
     lm_list = []
     base_x, base_y, base_z = hand_landmarks.landmark[0].x, hand_landmarks.landmark[0].y, hand_landmarks.landmark[0].z
     for lm in hand_landmarks.landmark: lm_list.extend([lm.x - base_x, lm.y - base_y, lm.z - base_z])
     return lm_list if len(lm_list) == STATIC_NUM_FEATURES else None
+
 def save_static_to_csv(fp, lbl, lms):
+    """Saves static gesture data."""
     exists = os.path.isfile(fp)
     header = ['label'] + [f'{ax}{i}' for i in range(STATIC_NUM_LANDMARKS) for ax in 'xyz']
     try:
@@ -91,7 +95,9 @@ def save_static_to_csv(fp, lbl, lms):
             if lms and len(lms) == STATIC_NUM_FEATURES: w.writerow([lbl] + lms); return True
             else: return False
     except IOError as e: print(f"Err static CSV: {e}"); return False
+
 def standardize_path(pts, length=PATH_LENGTH):
+    """Standardizes a path to a fixed number of points using interpolation."""
     if len(pts) < 2: return None
     pts_np = np.array(pts)
     dist = np.cumsum(np.sqrt(np.sum(np.diff(pts_np, axis=0)**2, axis=1)))
@@ -101,7 +107,9 @@ def standardize_path(pts, length=PATH_LENGTH):
     interp_x = interp1d(dist, pts_np[:, 0], kind='linear', bounds_error=False, fill_value="extrapolate")
     interp_y = interp1d(dist, pts_np[:, 1], kind='linear', bounds_error=False, fill_value="extrapolate")
     return np.vstack((interp_x(alpha), interp_y(alpha))).T.flatten()
+
 def save_path_to_csv(fp, lbl, coords):
+    """Saves standardized path data."""
     exists = os.path.isfile(fp)
     header = ['label'] + [f'{ax}{i}' for i in range(PATH_LENGTH) for ax in 'xy']
     try:
@@ -111,6 +119,16 @@ def save_path_to_csv(fp, lbl, coords):
             if coords is not None and len(coords) == PATH_NUM_FEATURES: w.writerow([lbl] + coords.tolist()); return True
             else: print(f"Warn: Invalid path data {lbl}. Len: {len(coords) if coords is not None else 'None'}!={PATH_NUM_FEATURES}"); return False
     except IOError as e: print(f"Err path CSV: {e}"); return False
+
+# Moved outside classes <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+def _convert_cv_qt(cv_img):
+    """Converts OpenCV image (BGR) to QImage (RGB888)."""
+    rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+    h, w, ch = rgb_image.shape
+    bytes_per_line = ch * w
+    convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+    return convert_to_Qt_format
+# <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 # --- PyQt Threads ---
 
@@ -293,7 +311,8 @@ class CameraThread(QThread):
 
             # --- Display Text & Emit Frame ---
             if display_prediction_text: cv2.putText(frame, display_prediction_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-            qt_image = self._convert_cv_qt(frame)
+            # Call the standalone conversion function <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< MODIFIED
+            qt_image = _convert_cv_qt(frame)
             self.frame_signal.emit(qt_image)
 
         cap.release()
@@ -315,7 +334,7 @@ class CameraThread(QThread):
         self.path_record_start_time = None
         self.status_signal.emit("Stopping camera...")
 
-    # --- Other Methods (set_static_label, set_path_recording, load_*, _convert_cv_qt) ---
+    # --- Other Methods ---
     def set_static_label(self, label):
         if self.mode == 'collect_static' and label in STATIC_ALLOWED_LABELS: self.current_static_label = label; self.status_signal.emit(f"Ready for static '{label}'. Show gesture.")
         elif self.mode != 'collect_static': self.status_signal.emit("Not in static data collection mode.")
@@ -329,9 +348,8 @@ class CameraThread(QThread):
         self.path_model = model; self.path_label_encoder = encoder; self.path_scaler = scaler; msg = "Path model loaded." if model and encoder and scaler else "Failed to load path model/encoder/scaler."
         if model and encoder and scaler: self.status_signal.emit(msg)
         else: self.error_signal.emit(msg)
-    def _convert_cv_qt(self, cv_img):
-        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB); h, w, ch = rgb_image.shape; bytes_per_line = ch * w
-        return QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+
+    # REMOVED _convert_cv_qt from CameraThread
 
 # --- Training Threads ---
 class StaticTrainingThread(QThread):
@@ -407,27 +425,11 @@ class MainWindow(QMainWindow):
         self.central_widget = QWidget(); self.setCentralWidget(self.central_widget); self.layout = QVBoxLayout(self.central_widget)
         self.top_layout = QHBoxLayout(); self.layout.addLayout(self.top_layout)
         self.camera_label = QLabel("Camera Feed"); self.camera_label.setAlignment(Qt.AlignCenter); self.camera_label.setFixedSize(CAMERA_FEED_WIDTH, CAMERA_FEED_HEIGHT); self.camera_label.setStyleSheet("border: 1px solid black; background-color: #f0f0f0;"); self.top_layout.addWidget(self.camera_label)
-
-        # Tab Widget for Controls <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< NEW
-        self.tab_widget = QTabWidget()
-        self.top_layout.addWidget(self.tab_widget) # Add tabs next to camera feed
-
-        # Create Tab Widgets
-        self.static_tab = QWidget()
-        self.path_tab = QWidget()
-        self.combined_tab = QWidget()
-
-        # Add Tabs
-        self.tab_widget.addTab(self.static_tab, "Static Gestures")
-        self.tab_widget.addTab(self.path_tab, "Path Gestures")
-        self.tab_widget.addTab(self.combined_tab, "Combined Mode")
-
-        # --- Layouts for each tab ---
-        self.static_layout = QVBoxLayout(self.static_tab)
-        self.path_layout = QVBoxLayout(self.path_tab)
-        self.combined_layout = QVBoxLayout(self.combined_tab)
-
-        # --- Populate Static Tab ---
+        self.tab_widget = QTabWidget(); self.top_layout.addWidget(self.tab_widget)
+        self.static_tab = QWidget(); self.path_tab = QWidget(); self.combined_tab = QWidget()
+        self.tab_widget.addTab(self.static_tab, "Static Gestures"); self.tab_widget.addTab(self.path_tab, "Path Gestures"); self.tab_widget.addTab(self.combined_tab, "Combined Mode")
+        self.static_layout = QVBoxLayout(self.static_tab); self.path_layout = QVBoxLayout(self.path_tab); self.combined_layout = QVBoxLayout(self.combined_tab)
+        # Static Tab
         self.static_collect_label = QLabel("1. Static Gesture Collection"); self.static_collect_label.setFont(QFont("Arial", 11, QFont.Bold)); self.static_layout.addWidget(self.static_collect_label)
         self.start_static_collect_button = QPushButton("Start Collecting Static"); self.start_static_collect_button.clicked.connect(self.start_static_collection_mode); self.static_layout.addWidget(self.start_static_collect_button)
         self.stop_static_collect_button = QPushButton("Stop Collecting Static"); self.stop_static_collect_button.clicked.connect(self.stop_camera); self.static_layout.addWidget(self.stop_static_collect_button)
@@ -441,9 +443,8 @@ class MainWindow(QMainWindow):
         self.start_static_classify_button = QPushButton("Start Real-time Static Classif."); self.start_static_classify_button.clicked.connect(self.start_static_classification_mode); self.static_layout.addWidget(self.start_static_classify_button)
         self.stop_static_classify_button = QPushButton("Stop Static Classif."); self.stop_static_classify_button.clicked.connect(self.stop_camera); self.static_layout.addWidget(self.stop_static_classify_button)
         self.classify_static_image_button = QPushButton("Classify Static from Image"); self.classify_static_image_button.clicked.connect(self.classify_static_from_image); self.static_layout.addWidget(self.classify_static_image_button)
-        self.static_layout.addStretch() # Push static controls up
-
-        # --- Populate Path Tab ---
+        self.static_layout.addStretch()
+        # Path Tab
         self.path_collect_label = QLabel("4. Path Gesture Collection"); self.path_collect_label.setFont(QFont("Arial", 11, QFont.Bold)); self.path_layout.addWidget(self.path_collect_label)
         self.start_path_collect_button = QPushButton("Start Collecting Paths"); self.start_path_collect_button.clicked.connect(self.start_path_collection_mode); self.path_layout.addWidget(self.start_path_collect_button)
         self.stop_path_collect_button = QPushButton("Stop Collecting Paths"); self.stop_path_collect_button.clicked.connect(self.stop_camera); self.path_layout.addWidget(self.stop_path_collect_button)
@@ -462,28 +463,22 @@ class MainWindow(QMainWindow):
         self.stop_path_classify_button = QPushButton("Stop Path Classif."); self.stop_path_classify_button.clicked.connect(self.stop_camera); self.path_layout.addWidget(self.stop_path_classify_button)
         self.path_classify_instructions = QLabel(f"Press/Hold '{record_key_name}' to record path for classif."); self.path_layout.addWidget(self.path_classify_instructions)
         self.path_prediction_label = QLabel("Path Prediction: ---"); self.path_layout.addWidget(self.path_prediction_label)
-        self.path_layout.addStretch() # Push path controls up
-
-        # --- Populate Combined Tab ---
+        self.path_layout.addStretch()
+        # Combined Tab
         self.combined_label = QLabel("7. Combined Classification"); self.combined_label.setFont(QFont("Arial", 11, QFont.Bold)); self.combined_layout.addWidget(self.combined_label)
         self.start_combined_button = QPushButton("Start Combined Mode"); self.start_combined_button.clicked.connect(self.start_combined_mode); self.combined_layout.addWidget(self.start_combined_button)
         self.stop_combined_button = QPushButton("Stop Combined Mode"); self.stop_combined_button.clicked.connect(self.stop_camera); self.combined_layout.addWidget(self.stop_combined_button)
         self.combined_result_label = QLabel("Combined Result: ---"); font = self.combined_result_label.font(); font.setPointSize(14); font.setBold(True); self.combined_result_label.setFont(font); self.combined_layout.addWidget(self.combined_result_label)
         # History Text Box
-        self.history_label = QLabel("Recognized Sequence:")
-        self.history_text_edit = QTextEdit()
-        self.history_text_edit.setReadOnly(True)
-        self.history_text_edit.setFixedHeight(150) # Adjusted height
-        self.combined_layout.addWidget(self.history_label)
-        self.combined_layout.addWidget(self.history_text_edit)
-        self.combined_layout.addStretch() # Push combined controls up
-
+        self.history_label = QLabel("Recognized Sequence:"); self.combined_layout.addWidget(self.history_label) # Add to combined layout
+        self.history_text_edit = QTextEdit(); self.history_text_edit.setReadOnly(True); self.history_text_edit.setFixedHeight(150); self.combined_layout.addWidget(self.history_text_edit) # Add to combined layout
+        self.combined_layout.addStretch()
         # Status Bar
         self.setStatusBar(QStatusBar(self)); self.statusBar().showMessage("Ready.")
         # Load initial state
         self._load_initial_counts(); self._load_models_and_encoders(); self._update_button_states(); self._update_data_count_display()
 
-    # --- Data Count & Loading --- (No changes)
+    # --- Data Count & Loading ---
     def _load_initial_counts(self):
         self.static_data_counts = {label: 0 for label in STATIC_ALLOWED_LABELS}
         if os.path.exists(STATIC_CSV_FILE) and os.path.getsize(STATIC_CSV_FILE) > 0:
@@ -619,7 +614,7 @@ class MainWindow(QMainWindow):
                     mp_drawing.draw_landmarks(img_display, hand_landmarks, mp_hands.HAND_CONNECTIONS, mp_drawing_styles.get_default_hand_landmarks_style(), mp_drawing_styles.get_default_hand_connections_style())
                 else: prediction_text = "Hand detected, landmarks invalid."
             cv2.putText(img_display, prediction_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
-            qt_image = self._convert_cv_qt(img_display); scaled_pixmap = QPixmap.fromImage(qt_image).scaled(self.camera_label.width(), self.camera_label.height(), Qt.KeepAspectRatio)
+            qt_image = _convert_cv_qt(img_display); scaled_pixmap = QPixmap.fromImage(qt_image).scaled(self.camera_label.width(), self.camera_label.height(), Qt.KeepAspectRatio)
             self.camera_label.setPixmap(scaled_pixmap); self.statusBar().showMessage(f"Image classification: {prediction_text}")
         except Exception as e: self.show_error("Static Image Classification Error", f"{e}"); self.statusBar().showMessage("Static image classification failed.")
 
