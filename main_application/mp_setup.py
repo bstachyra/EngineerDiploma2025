@@ -16,5 +16,5 @@ hands = mp_hands.Hands(
 
 def close_hands():
     hands.close()
-    print("MediaPipe Hands resources closed.")
+    print("Obiekt MediaPipe Hands został zamknięty.")
 

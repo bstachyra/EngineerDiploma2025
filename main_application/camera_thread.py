@@ -6,7 +6,7 @@ import numpy as np
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QImage
 
-from constants import STATIC_CONFIDENCE_THRESHOLD, STATIC_HOLD_DURATION_SEC, PATH_MAX_DURATION_SEC, PATH_TRACKING_LANDMARK
+from constants import STATIC_CONFIDENCE_THRESHOLD, STATIC_HOLD_DURATION_SEC, PATH_MAX_DURATION_SEC, PATH_TRACKING_LANDMARK, STATIC_ALLOWED_LABELS
 from helpers import process_static_landmarks, convert_cv_qt
 from mp_setup import hands, mp_drawing, mp_drawing_styles, mp_hands 
 
@@ -44,16 +44,16 @@ class CameraThread(QThread):
         self.running = True
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
-            self.error_signal.emit("Error: Could not open camera.")
+            self.error_signal.emit("Error: Nie można otworzyć kamery.")
             self.running = False
             return
-        self.status_signal.emit(f"Camera started in {self.mode} mode.")
+        self.status_signal.emit(f"Kamera otworzona w trybie {self.mode}.")
 
         while self.running and cap.isOpened():
             current_time = time.time()
             ret, frame = cap.read()
             if not ret:
-                self.status_signal.emit("Waiting for frame...")
+                self.status_signal.emit("Czekam na klatkę..")
                 time.sleep(0.1)
                 continue
 
@@ -105,7 +105,7 @@ class CameraThread(QThread):
             self.frame_signal.emit(qt_image)
 
         cap.release()
-        self.status_signal.emit("Camera stopped.")
+        self.status_signal.emit("Kamera zatrzymana.")
         self.running = False
 
 
@@ -127,7 +127,7 @@ class CameraThread(QThread):
         if static_pred_conf >= STATIC_CONFIDENCE_THRESHOLD:
             if self.high_conf_label != static_pred_label:
                 self._reset_high_conf_timer(static_pred_label, current_time)
-                if self.is_recording_path: self._stop_and_process_combined_path("Static label changed mid-hold.")
+                if self.is_recording_path: self._stop_and_process_combined_path("Etykieta statyczna zmieniona w trakcie nagrywania ścieżki.")
 
             elif not self.is_recording_path and self.high_conf_start_time is not None and \
                  (current_time - self.high_conf_start_time >= STATIC_HOLD_DURATION_SEC):
@@ -136,9 +136,9 @@ class CameraThread(QThread):
             if self.is_recording_path:
                 if self.path_record_start_time is not None and \
                    (current_time - self.path_record_start_time > PATH_MAX_DURATION_SEC):
-                    self._stop_and_process_combined_path(f"Path time limit ({PATH_MAX_DURATION_SEC:.1f}s) exceeded.")
+                    self._stop_and_process_combined_path(f"Maksymalny czas trwania ścieżki ({PATH_MAX_DURATION_SEC:.1f}s) przekroczony.")
                 elif self.combined_trigger_label != static_pred_label:
-                    self._stop_and_process_combined_path("Static label changed during path.")
+                    self._stop_and_process_combined_path("Etykieta statyczna zmieniona w trakcie nagrywania ścieżki.")
                 elif path_point_data:
                     self.current_path_points.append(path_point_data)
                     self.path_point_signal.emit(path_point_data)
@@ -146,13 +146,13 @@ class CameraThread(QThread):
         else:
             self._reset_high_conf_timer(None, None)
             if self.is_recording_path:
-                self._stop_and_process_combined_path("Static conf low.")
+                self._stop_and_process_combined_path("Niska pewność statyczna.")
 
 
     def _handle_hand_lost(self, current_time):
         self._reset_high_conf_timer(None, None)
         if self.is_recording_path and self.mode == 'combined':
-            self._stop_and_process_combined_path("Hand lost.")
+            self._stop_and_process_combined_path("Zgubiono dłoń.")
 
 
     def _reset_high_conf_timer(self, label, start_time):
@@ -165,12 +165,12 @@ class CameraThread(QThread):
         self.combined_trigger_label = trigger_label
         self.current_path_points = []
         self.path_record_start_time = start_time
-        self.status_signal.emit(f"Held '{self.combined_trigger_label}' >= {STATIC_HOLD_DURATION_SEC:.1f}s. Recording path...")
+        self.status_signal.emit(f"Pokazano '{self.combined_trigger_label}' przez >= {STATIC_HOLD_DURATION_SEC:.1f}s. Nagrywanie ścieżki...")
         self.path_recording_started_signal.emit()
 
 
     def _stop_and_process_combined_path(self, reason):
-        self.status_signal.emit(f"{reason} Stopping path for '{self.combined_trigger_label}'.")
+        self.status_signal.emit(f"{reason} Zatrzymywanie ścieżki dla '{self.combined_trigger_label}'.")
         if len(self.current_path_points) > 1:
             self.combined_path_ready_signal.emit(list(self.current_path_points), self.combined_trigger_label)
         self.is_recording_path = False
@@ -185,7 +185,7 @@ class CameraThread(QThread):
     def stop(self):
         self.running = False
         if self.is_recording_path and self.mode == 'combined' and self.combined_trigger_label:
-             self.status_signal.emit(f"Camera stopping. Processing path for '{self.combined_trigger_label}'.")
+             self.status_signal.emit(f"Zatrzymano kamere. Procesowanie ścieżki dla '{self.combined_trigger_label}'.")
              if len(self.current_path_points) > 1:
                  self.combined_path_ready_signal.emit(list(self.current_path_points), self.combined_trigger_label)
              self.path_recording_stopped_signal.emit()
@@ -195,15 +195,15 @@ class CameraThread(QThread):
         self.high_conf_start_time = None
         self.high_conf_label = None
         self.path_record_start_time = None
-        self.status_signal.emit("Stopping camera...")
+        self.status_signal.emit("Zatrzymywanie kamery...")
 
 
     def set_static_label(self, label):
         if self.mode == 'collect_static' and label in STATIC_ALLOWED_LABELS:
             self.current_static_label = label
-            self.status_signal.emit(f"Ready for static '{label}'. Show gesture.")
+            self.status_signal.emit(f"Gotowość na '{label}'. Pokaż gest.")
         elif self.mode != 'collect_static':
-             self.status_signal.emit("Not in static data collection mode.")
+             self.status_signal.emit("Aplikacja nie jest w stanie kolekcji gestów statycznych.")
 
 
     def set_path_recording(self, is_recording):
@@ -214,7 +214,7 @@ class CameraThread(QThread):
     def load_static_model(self, model, encoder):
         self.static_model = model
         self.static_label_encoder = encoder
-        msg = "Static model loaded." if model and encoder else "Failed to load static model/encoder."
+        msg = "Static model loaded." if model and encoder else "Niepowodzenie w ładowaniu statycznego modelu/enkodera."
         if model and encoder: self.status_signal.emit(msg)
         else: self.error_signal.emit(msg)
 
@@ -223,7 +223,7 @@ class CameraThread(QThread):
         self.path_model = model
         self.path_label_encoder = encoder
         self.path_scaler = scaler
-        msg = "Path model loaded." if model and encoder and scaler else "Failed to load path model/encoder/scaler."
+        msg = "Path model loaded." if model and encoder and scaler else "Niepowodzenie w ładowaniu modelu/enkodera/skalera ścieżki."
         if model and encoder and scaler: self.status_signal.emit(msg)
         else: self.error_signal.emit(msg)
 
