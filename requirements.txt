@@ -1,6 +1,10 @@
-opencv-python
 mediapipe
-tensorflow
-pyqt5
-scikit-learn
+PyQt5
+opencv-python
 numpy
+pandas
+scipy
+tensorflow
+matplotlib
+seaborn
+scikit-learn
