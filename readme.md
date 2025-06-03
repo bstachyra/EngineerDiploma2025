@@ -1,6 +1,6 @@
 # Praca dyplomowa inżynierska
-Projekt i realizacja programu do rozpoznawania w czasie rzeczywistym gestów polskiego języka migowego
-Bartosz Stachyra
+Projekt i realizacja programu do rozpoznawania w czasie rzeczywistym gestów polskiego języka migowego. \
+Autor: Bartosz Stachyra
 ## Instrukcja uruchomienia
 Poniższa instrukcja zakłada posiadanie Python w wersji 3.11 na stacji użytkownika, z kompatybilną wersją pypi.
 ### Linux
