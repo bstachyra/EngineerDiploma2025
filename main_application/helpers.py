@@ -36,10 +36,10 @@ def save_static_to_csv(filepath, label, landmarks):
                 writer.writerow([label] + landmarks)
                 return True
             else:
-                print(f"Warning: Attempted to save invalid static landmarks for label {label}.")
+                print(f"Uwaga: Podjęto próbę zapisu nieprawidłowych statycznych punktów charakterystycznych dla etykiety {label}.")
                 return False
     except IOError as e:
-        print(f"Error saving static CSV: {e}")
+        print(f"Błąd zapisu statycznego CSV: {e}")
         return False
 
 
@@ -75,10 +75,10 @@ def save_path_to_csv(filepath, label, path_coords):
                 writer.writerow([label] + path_coords.tolist())
                 return True
             else:
-                print(f"Warning: Attempted to save invalid path data for label {label}. Length: {len(path_coords) if path_coords is not None else 'None'} != {PATH_NUM_FEATURES}")
+                print(f"Ostrzeżenie: Próbowano zapisać nieprawidłowe dane ścieżki dla etykiety {label}. Długość: {len(path_coords) if path_coords is not None else 'Brak'} != {PATH_NUM_FEATURES}")
                 return False
     except IOError as e:
-        print(f"Error saving path CSV: {e}")
+        print(f"Błąd zapisu CSV ścieżki: {e}")
         return False
 
 
